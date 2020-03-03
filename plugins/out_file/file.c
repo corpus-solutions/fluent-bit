@@ -38,7 +38,14 @@
 #define NEWLINE "\n"
 #endif
 
+#ifdef FLB_SYSTEM_WINDOWS
+#define PATHSEPARATOR '\\'
+#else
+#define PATHSEPARATOR '/'
+#endif
+
 struct flb_file_conf {
+    const char *out_directory;
     const char *out_file;
     const char *delimiter;
     const char *label_delimiter;
@@ -317,6 +324,7 @@ static void cb_file_flush(const void *data, size_t bytes,
     size_t alloc_size = 0;
     size_t total;
     const char *out_file;
+    const char *out_directory;
     char *buf;
     char *tag_buf;
     msgpack_object *obj;
@@ -333,8 +341,21 @@ static void cb_file_flush(const void *data, size_t bytes,
         out_file = ctx->out_file;
     }
 
-    /* Open output file with default name as the Tag */
-    fp = fopen(out_file, "ab+");
+    if (!ctx->out_directory) {
+        /* Open output file with default name as the Tag */
+        fp = fopen(out_file, "ab+");
+    }
+    else {
+        out_directory = ctx->out_directory;
+        size_t filename_len = strlen(out_file);
+        size_t dirname_len = strlen(out_directory);
+        /* + 2 because of the '/' and the terminating 0 */
+        char *fullpath = flb_malloc(dirname_len + filename_len + 2);
+        sprintf(fullpath, "%s%c%s", out_directory, PATHSEPARATOR, out_file);
+        fp = fopen(fullpath, "ab+");
+        flb_free(fullpath);
+    }
+
     if (fp == NULL) {
         flb_errno();
         FLB_OUTPUT_RETURN(FLB_ERROR);
@@ -437,6 +458,11 @@ static int cb_file_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "directory", NULL,
+     0, FLB_TRUE, offsetof(struct flb_file_conf, out_directory),
+     NULL
+    },
     {
      FLB_CONFIG_MAP_STR, "path", NULL,
      0, FLB_TRUE, offsetof(struct flb_file_conf, out_file),
